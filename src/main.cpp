@@ -1,5 +1,4 @@
-#include <SDL.h>
-#include <SDL_opengl.h>
+#include <GLFW/glfw3.h>
 #include <vector>
 #include <cmath>
 #include <iostream>
@@ -11,7 +10,6 @@
 #include <immintrin.h>
 #include <chrono>
 #include <memory>
-
 
 // Настройки
 const int WIDTH = 770;
@@ -42,13 +40,14 @@ const int OBSTACLE_RADIUS = 0;
 
 // Стены
 const int WALL_THICKNESS = 0;
-const SDL_Color WALL_COLOR = { 255, 255, 255, 255 };
+struct Color { unsigned char r, g, b, a; }; // Замена SDL_Color
+const Color WALL_COLOR = { 255, 255, 255, 255 };
 const int PAD_X = 240;
 const int PAD_Y = 20;
 
 // Градиент цветов
 const int GRADIENT_STEPS = 4096;
-SDL_Color color_gradient[GRADIENT_STEPS];
+Color color_gradient[GRADIENT_STEPS];
 const float max_speed = 16.0f;
 
 // Количество потоков
@@ -163,17 +162,17 @@ private:
 
 
 // Функция для создания градиента цветов
-void create_gradient(SDL_Color color1, SDL_Color color2, int steps, SDL_Color* gradient) {
+void create_gradient(Color color1, Color color2, int steps, Color* gradient) {
     for (int i = 0; i < steps; ++i) {
         float t = i / (steps - 1.0f);
-        gradient[i].r = static_cast<Uint8>(color1.r * (1 - t) + color2.r * t);
-        gradient[i].g = static_cast<Uint8>(color1.g * (1 - t) + color2.g * t);
-        gradient[i].b = static_cast<Uint8>(color1.b * (1 - t) + color2.b * t);
+        gradient[i].r = static_cast<unsigned char>(color1.r * (1 - t) + color2.r * t);
+        gradient[i].g = static_cast<unsigned char>(color1.g * (1 - t) + color2.g * t);
+        gradient[i].b = static_cast<unsigned char>(color1.b * (1 - t) + color2.b * t);
         gradient[i].a = 255;
     }
 }
 
-// Класс частицы
+
 class Particle {
 public:
     float x;
@@ -238,6 +237,7 @@ public:
         vy *= DAMPING;
     }
 
+
     void draw() {
         // Использование градиента для визуализации скорости
         float speed = std::sqrt(vx * vx + vy * vy);
@@ -268,6 +268,7 @@ public:
         vy = 0;
         angular_velocity = 0; // Сброс угловой скорости
     }
+
 
     void apply_spring_force(Particle* other) {
         float dx = x - other->x;
@@ -380,14 +381,15 @@ void calculate_forces(std::vector<Particle>& particles, int start, int end) {
     }
 }
 
-// Функция для обновления физики в отдельном потоке
+
 void update_physics_thread(std::vector<Particle>& particles, int start, int end) {
     calculate_density_pressure(particles, start, end);
     calculate_forces(particles, start, end);
 }
 
 
-// Структура для хранения данных ползунка
+
+
 struct Slider {
     std::string label;
     float* value;
@@ -396,7 +398,6 @@ struct Slider {
     int x, y, width, height;
 };
 
-// Функция для отрисовки ползунка
 void draw_slider(Slider slider) {
     // Отрисовка фона ползунка
     glColor4ub(200, 200, 200, 255);
@@ -418,12 +419,12 @@ void draw_slider(Slider slider) {
     glVertex2f(slider_pos + 5, slider.y + slider.height);
     glVertex2f(slider_pos - 5, slider.y + slider.height);
     glEnd();
-
-
 }
 
-// Функция для обработки событий ползунка
-bool handle_slider_event(Slider slider, int mouseX, int mouseY) {
+
+
+
+bool handle_slider_event(Slider slider, double mouseX, double mouseY) {
     if (mouseX >= slider.x && mouseX <= slider.x + slider.width &&
         mouseY >= slider.y && mouseY <= slider.y + slider.height) {
         *slider.value = slider.min_value + (mouseX - slider.x) * (slider.max_value - slider.min_value) / slider.width;
@@ -432,64 +433,54 @@ bool handle_slider_event(Slider slider, int mouseX, int mouseY) {
     return false;
 }
 
+
+
+
+
 int main(int argc, char* argv[]) {
-    // Инициализация SDL
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        std::cerr << "SDL_Init Error: " << SDL_GetError() << std::endl;
+    // Инициализация GLFW
+    if (!glfwInit()) {
+        std::cerr << "glfwInit failed" << std::endl;
         return 1;
     }
 
-    // Настройка OpenGL
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 32);
+    glfwWindowHint(GLFW_DEPTH_BITS, 32);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
 
-    // Создание окна
-    SDL_Window* window = SDL_CreateWindow("2D Fluid Simulation", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-        WIDTH, HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
-    if (window == nullptr) {
-        std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << std::endl;
-        SDL_Quit();
+    GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "2D Fluid Simulation", nullptr, nullptr);
+    if (!window) {
+        std::cerr << "glfwCreateWindow failed" << std::endl;
+        glfwTerminate();
         return 1;
     }
 
-    // Создание контекста OpenGL
-    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
-    if (gl_context == nullptr) {
-        std::cerr << "SDL_GL_CreateContext Error: " << SDL_GetError() << std::endl;
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
-    }
+    glfwMakeContextCurrent(window);
 
-    // Инициализация OpenGL
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(0, WIDTH, HEIGHT, 0, 1, -1);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    // Создание градиента
-    SDL_Color color1 = { 0, 0, 255, 255 }; // Синий
-    SDL_Color color2 = { 255, 255, 255, 255 }; // Желтый
+    Color color1 = { 0, 0, 255, 255 }; // Синий
+    Color color2 = { 255, 255, 255, 255 }; // Желтый
     create_gradient(color1, color2, GRADIENT_STEPS, color_gradient);
 
-    // Создание списка частиц
+
     std::vector<Particle> particles;
 
-    // Флаги для кнопок мыши
     bool mouse_pressed_left = false;
     bool mouse_pressed_right = false;
     bool mouse_pressed_central = false;
 
-    // Список захваченных частиц
     std::vector<Particle*> grabbed_particles;
 
-    // Генератор случайных чисел
+
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> distrib(-PARTICLE_RADIUS * 2, PARTICLE_RADIUS * 2);
 
-    // Создание ползунков
+
     std::vector<Slider> sliders = {
         {"Gravity", &GRAVITY, 0.0f, 1.0f, 10, 10, 100, 20},
         {"Rest Density", &REST_DENSITY, 1.0f, 20.0f, 10, 40, 100, 20},
@@ -497,15 +488,12 @@ int main(int argc, char* argv[]) {
         {"Viscosity", &VISCOSITY, 0.1f, 2.0f, 10, 100, 100, 20},
         {"Cohesion", &COHESION_STRENGTH, 0.0f, 1.0f, 10, 130, 100, 20},
         {"Spring Constant", &SPRING_CONSTANT, 0.0f, 1.0f, 10, 160, 100, 20},
-        // Добавьте остальные ползунки здесь...
     };
 
-
-    // Создание квадродерева
     Quadtree qtree(PAD_X, PAD_Y, WIDTH - 2 * PAD_X, HEIGHT - 2 * PAD_Y, 4);
 
 
-    // Переменные для замера времени
+
     Duration find_neighbors_time(0);
     Duration density_pressure_time(0);
     Duration forces_time(0);
@@ -514,166 +502,173 @@ int main(int argc, char* argv[]) {
     Duration frame_time(0);
 
 
-    // Главный цикл
-    bool running = true;
-    Uint32 last_time = SDL_GetTicks();
-    while (running) {
-        // Обработка событий
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
-                running = false;
-            }
-            else if (event.type == SDL_MOUSEBUTTONDOWN) {
-                if (event.button.button == SDL_BUTTON_LEFT) {
-                    mouse_pressed_left = true;
+    double previousTime = glfwGetTime();
+    int frameCount = 0;
+    int fps_int = 0; // Инициализация fps_int
 
-                    // Обработка событий ползунков
-                    int mouseX, mouseY;
-                    SDL_GetMouseState(&mouseX, &mouseY);
-                    for (Slider& slider : sliders) {
-                        handle_slider_event(slider, mouseX, mouseY);
-                    }
-                }
-                else if (event.button.button == SDL_BUTTON_RIGHT) {
-                    mouse_pressed_right = true;
-                    int mouseX, mouseY;
-                    SDL_GetMouseState(&mouseX, &mouseY);
-                    for (Particle& particle : particles) {
-                        float dx = particle.x - mouseX;
-                        float dy = particle.y - mouseY;
-                        float distance_sq = dx * dx + dy * dy;
-                        float grab_radius_sq = GRAB_RADIUS * GRAB_RADIUS;
 
-                        if (distance_sq <= grab_radius_sq) {
-                            particle.grabbed = true;
-                            grabbed_particles.push_back(&particle);
-                        }
-                    }
-                }
-                // Обработка нажатия средней кнопки мыши
-                else if (event.button.button == SDL_BUTTON_MIDDLE) {
-                    mouse_pressed_central = true;
-                    int mouseX, mouseY;
-                    SDL_GetMouseState(&mouseX, &mouseY);
-                    // Применение импульса к частицам в радиусе действия
-                    for (Particle& particle : particles) {
-                        float dx = particle.x - mouseX;
-                        float dy = particle.y - mouseY;
-                        float distance_sq = dx * dx + dy * dy;
-                        float impulse_radius_sq = GRAB_RADIUS * GRAB_RADIUS;
+    while (!glfwWindowShouldClose(window)) {
 
-                        if (distance_sq <= impulse_radius_sq) {
-                            float distance = std::sqrt(distance_sq);
-                            // Расчет импульса в зависимости от расстояния
-                            float impulse_strength = IMPULSE_STRENGTH * (1 - distance / GRAB_RADIUS);
-                            float impulse_x = impulse_strength * dx / distance;
-                            float impulse_y = impulse_strength * dy / distance;
-                            particle.apply_impulse(impulse_x, impulse_y);
-                        }
-                    }
-                }
+        double currentTime = glfwGetTime();
+        frameCount++;
+
+        if (currentTime - previousTime >= 1.0) {
+            fps_int = static_cast<int>(frameCount / (currentTime - previousTime));
+            frameCount = 0;
+            previousTime = currentTime;
+        }
+
+
+        glfwPollEvents();
+
+
+        double xpos, ypos;
+        glfwGetCursorPos(window, &xpos, &ypos);
+
+
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+            mouse_pressed_left = true;
+            for (Slider& slider : sliders) {
+                handle_slider_event(slider, xpos, ypos);
             }
-            else if (event.type == SDL_MOUSEBUTTONUP) {
-                if (event.button.button == SDL_BUTTON_LEFT) {
-                    mouse_pressed_left = false;
-                }
-                else if (event.button.button == SDL_BUTTON_RIGHT) {
-                    mouse_pressed_right = false;
-                    for (Particle* particle : grabbed_particles) {
-                        particle->grabbed = false;
+
+        }
+        else {
+            mouse_pressed_left = false;
+        }
+
+
+
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+
+            if (!mouse_pressed_right) { // проверка на первое нажатие 
+                mouse_pressed_right = true;
+                for (Particle& particle : particles) {
+                    float dx = particle.x - xpos;
+                    float dy = particle.y - ypos;
+                    float distance_sq = dx * dx + dy * dy;
+                    float grab_radius_sq = GRAB_RADIUS * GRAB_RADIUS;
+
+                    if (distance_sq <= grab_radius_sq) {
+                        particle.grabbed = true;
+                        grabbed_particles.push_back(&particle);
                     }
-                    grabbed_particles.clear();
-                }
-                else if (event.button.button == SDL_BUTTON_MIDDLE) {
-                    mouse_pressed_central = false;
-                }
-            }
-            else if (event.type == SDL_KEYDOWN) {
-                if (event.key.keysym.sym == SDLK_s) {
-                    for (Particle& particle : particles) {
-                        particle.reset_velocity();
-                    }
-                }
-                else if (event.key.keysym.sym == SDLK_r) { // Удаление всех частиц
-                    particles.clear();
-                }
-                // Управление силой импульса с помощью клавиш
-                else if (event.key.keysym.sym == SDLK_UP) {
-                    IMPULSE_STRENGTH += 5.0f;
-                }
-                else if (event.key.keysym.sym == SDLK_DOWN) {
-                    IMPULSE_STRENGTH = std::max(0.0f, IMPULSE_STRENGTH - 5.0f);
-                }
-                // Включение/выключение стрелок при нажатии на 1 - Дебаг меню
-                else if (event.key.keysym.sym == SDLK_1) {
-                    debug_mode = !debug_mode;
-                    show_arrows = !show_arrows;
-                }
-                // При нажатии 0 - const int NUM_SEGMENTS = 32
-                else if (event.key.keysym.sym == SDLK_0) {
-                    debug_mode = false; // Выключаем дебаг-режим
-                    show_arrows = false;
                 }
             }
         }
+        else {
+            mouse_pressed_right = false;
+            for (Particle* particle : grabbed_particles) {
+                particle->grabbed = false;
+            }
+            grabbed_particles.clear();
+        }
 
-        // Создание новых частиц
+
+
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS) {
+            if (!mouse_pressed_central) { // проверка на первое нажатие
+                mouse_pressed_central = true;
+
+                for (Particle& particle : particles) {
+                    float dx = particle.x - xpos;
+                    float dy = particle.y - ypos;
+                    float distance_sq = dx * dx + dy * dy;
+                    float impulse_radius_sq = GRAB_RADIUS * GRAB_RADIUS;
+
+                    if (distance_sq <= impulse_radius_sq) {
+                        float distance = std::sqrt(distance_sq);
+                        // Расчет импульса в зависимости от расстояния
+                        float impulse_strength = IMPULSE_STRENGTH * (1 - distance / GRAB_RADIUS);
+                        float impulse_x = impulse_strength * dx / distance;
+                        float impulse_y = impulse_strength * dy / distance;
+                        particle.apply_impulse(impulse_x, impulse_y);
+                    }
+                }
+            }
+
+        }
+        else {
+            mouse_pressed_central = false;
+        }
+
+
+
+
+
+
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+            for (Particle& particle : particles) {
+                particle.reset_velocity();
+            }
+        }
+
+
+        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+            particles.clear();
+        }
+
+
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+            IMPULSE_STRENGTH += 5.0f;
+        }
+
+
+
+        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+            IMPULSE_STRENGTH = std::max(0.0f, IMPULSE_STRENGTH - 5.0f);
+        }
+
+
+
+        if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
+            debug_mode = !debug_mode;
+            show_arrows = !show_arrows;
+        }
+
+
+        if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
+            debug_mode = false; // Выключаем дебаг-режим
+            show_arrows = false;
+        }
+
+
+
         if (mouse_pressed_left && particles.size() < MAX_PARTICLES) {
             for (int i = 0; i < PARTICLE_CREATION_RATE; ++i) {
-                int mouseX, mouseY;
-                SDL_GetMouseState(&mouseX, &mouseY);
-                float x = mouseX + distrib(gen);
-                float y = mouseY + distrib(gen);
+                float x = xpos + distrib(gen);
+                float y = ypos + distrib(gen);
                 particles_mutex.lock();
                 particles.emplace_back(x, y);
                 particles_mutex.unlock();
             }
         }
 
-        // Перемещение захваченных частиц
+
+
         if (mouse_pressed_right) {
-            int mouseX, mouseY;
-            SDL_GetMouseState(&mouseX, &mouseY);
             for (Particle* particle : grabbed_particles) {
-                float dx = mouseX - particle->x;
-                float dy = mouseY - particle->y;
+                float dx = xpos - particle->x;
+                float dy = ypos - particle->y;
                 particle->vx = dx * DRAG_COEFFICIENT;
                 particle->vy = dy * DRAG_COEFFICIENT;
             }
         }
 
-        if (mouse_pressed_central) {
-            int mouseX, mouseY;
-            SDL_GetMouseState(&mouseX, &mouseY);
-            for (Particle& particle : particles) {
-                float dx = particle.x - mouseX;
-                float dy = particle.y - mouseY;
-                float distance_sq = dx * dx + dy * dy;
-                float impulse_radius_sq = GRAB_RADIUS * GRAB_RADIUS;
-
-                if (distance_sq <= impulse_radius_sq) {
-                    float distance = std::sqrt(distance_sq);
-                    float impulse_strength = IMPULSE_STRENGTH * (1 - distance / GRAB_RADIUS);
-                    float impulse_x = impulse_strength * dx / distance;
-                    float impulse_y = impulse_strength * dy / distance;
-                    particle.apply_impulse(impulse_x, impulse_y);
-                }
-            }
-
-        }
 
 
-        // Обновление физики
+
+
         auto start_time = Clock::now();
 
         particles_mutex.lock();
         find_neighbors(particles, qtree);
         particles_mutex.unlock();
 
+
         auto end_physics_time = Clock::now();
 
-        // Обновление физики в нескольких потоках
+
         std::vector<std::thread> threads;
         int particles_per_thread = particles.size() / NUM_THREADS;
         for (int i = 0; i < NUM_THREADS; ++i) {
@@ -682,10 +677,10 @@ int main(int argc, char* argv[]) {
             threads.push_back(std::thread(update_physics_thread, std::ref(particles), start, end));
         }
 
-        // Ожидание завершения всех потоков
         for (auto& thread : threads) {
             thread.join();
         }
+
 
 
         particles_mutex.lock();
@@ -695,10 +690,10 @@ int main(int argc, char* argv[]) {
         particles_mutex.unlock();
         auto end_update_time = Clock::now();
 
-        // Отрисовка
+
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // Рисуем стены
+
         glColor4ub(WALL_COLOR.r, WALL_COLOR.g, WALL_COLOR.b, WALL_COLOR.a);
         glBegin(GL_LINES);
         glVertex2f(PAD_X, PAD_Y);
@@ -711,8 +706,6 @@ int main(int argc, char* argv[]) {
         glVertex2f(WIDTH - PAD_X, HEIGHT - PAD_Y);
         glEnd();
 
-        // Рисуем препятствие (невидимое, радиус 0)
-        // ... (код отрисовки препятствия, можно удалить)
 
 
         particles_mutex.lock();
@@ -721,7 +714,7 @@ int main(int argc, char* argv[]) {
         }
         particles_mutex.unlock();
 
-        // Рисуем стрелки поверх частиц
+
         if (show_arrows) {
             particles_mutex.lock();
             for (Particle& particle : particles) {
@@ -742,24 +735,28 @@ int main(int argc, char* argv[]) {
         }
 
 
-        // Отрисовка ползунков
         for (Slider& slider : sliders) {
             draw_slider(slider);
         }
 
-
         auto end_draw_time = Clock::now();
 
+
         std::string title = "2D Fluid Simulation v0.975R | Particles: " + std::to_string(particles.size()) + "/" + std::to_string(MAX_PARTICLES) + " | R - clean up | FPS: " + std::to_string(fps_int) + " | Impulse Strength: " + std::to_string(IMPULSE_STRENGTH);
-        SDL_SetWindowTitle(window, title.c_str());
+        glfwSetWindowTitle(window, title.c_str());
+
+
 
         auto end_frame_time = Clock::now();
+
 
         find_neighbors_time = (end_physics_time - start_time);
         density_pressure_time = (end_update_time - end_physics_time) / NUM_THREADS;
         update_time = end_update_time - end_physics_time;
         draw_time = end_draw_time - end_update_time;
         frame_time = end_frame_time - start_time;
+
+
 
 
         if (debug_mode) {
@@ -773,17 +770,17 @@ int main(int argc, char* argv[]) {
             std::cout << "--------------------\n";
         }
 
+        glfwSwapBuffers(window);
 
-        SDL_GL_SwapWindow(window);
-        SDL_Delay(1000 / FPS);
+        glfwWaitEventsTimeout(1.0 / FPS);
 
 
     }
 
-    // Освобождение ресурсов
-    SDL_GL_DeleteContext(gl_context);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
 
     return 0;
 }
