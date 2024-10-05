@@ -1,6 +1,7 @@
+#include <glad/glad.h> // Или glew.h
 #include <GLFW/glfw3.h>
 #include <vector>
-#include <cmath>
+#include <cmath> // Добавлено для M_PI
 #include <iostream>
 #include <random>
 #include <string>
@@ -31,7 +32,7 @@ float ROTATION_SPEED = 20.0f; // Скорость вращения частиц
 int IMPULSE_STRENGTH = 50; // Сила импульса (теперь переменная)
 
 #define DEG2RAD 0.017453292519943295f // PI / 180
-
+#define M_PI 3.14
 
 // Препятствие
 const int OBSTACLE_X = 200;
@@ -67,111 +68,7 @@ bool debug_mode = false;
 using Clock = std::chrono::high_resolution_clock;
 using Duration = std::chrono::duration<double>;
 
-class Quadtree {
-public:
-    // Границы квадродерева
-    float x, y, width, height;
-    // Максимальное количество частиц в узле
-    int capacity;
-    // Вектор частиц в данном узле
-    std::vector<Particle*> particles;
-    // Дочерние узлы
-    std::unique_ptr<Quadtree> nw, ne, sw, se;
-    bool divided;
-
-
-    Quadtree(float x, float y, float width, float height, int capacity) :
-        x(x), y(y), width(width), height(height), capacity(capacity), divided(false) {}
-
-    void insert(Particle* particle) {
-        if (!contains(particle)) return;
-
-        if (particles.size() < capacity) {
-            particles.push_back(particle);
-        }
-        else {
-            if (!divided) subdivide();
-
-            nw->insert(particle);
-            ne->insert(particle);
-            sw->insert(particle);
-            se->insert(particle);
-        }
-    }
-
-    void query(float x, float y, float radius, std::vector<Particle*>& found) {
-        if (!intersects(x, y, radius)) return;
-
-        for (Particle* p : particles) {
-            float dx = p->x - x;
-            float dy = p->y - y;
-            if (dx * dx + dy * dy < radius * radius) {
-                found.push_back(p);
-            }
-        }
-
-        if (divided) {
-            nw->query(x, y, radius, found);
-            ne->query(x, y, radius, found);
-            sw->query(x, y, radius, found);
-            se->query(x, y, radius, found);
-        }
-    }
-
-
-private:
-
-    bool contains(Particle* particle) {
-        return particle->x >= x && particle->x < x + width &&
-            particle->y >= y && particle->y < y + height;
-    }
-
-
-    bool intersects(float x, float y, float radius) {
-        float distX = std::abs(x - (this->x + this->width / 2));
-        float distY = std::abs(y - (this->y + this->height / 2));
-
-        if (distX > this->width / 2 + radius) return false;
-        if (distY > this->height / 2 + radius) return false;
-
-        if (distX <= this->width / 2) return true;
-        if (distY <= this->height / 2) return true;
-
-        float cornerDistSq = (distX - this->width / 2) * (distX - this->width / 2) +
-            (distY - this->height / 2) * (distY - this->height / 2);
-
-        return cornerDistSq <= radius * radius;
-
-    }
-
-
-    void subdivide() {
-        float halfWidth = width / 2;
-        float halfHeight = height / 2;
-
-        nw = std::make_unique<Quadtree>(x, y, halfWidth, halfHeight, capacity);
-        ne = std::make_unique<Quadtree>(x + halfWidth, y, halfWidth, halfHeight, capacity);
-        sw = std::make_unique<Quadtree>(x, y + halfHeight, halfWidth, halfHeight, capacity);
-        se = std::make_unique<Quadtree>(x + halfWidth, y + halfHeight, halfWidth, halfHeight, capacity);
-
-        divided = true;
-    }
-};
-
-
-
-
-// Функция для создания градиента цветов
-void create_gradient(Color color1, Color color2, int steps, Color* gradient) {
-    for (int i = 0; i < steps; ++i) {
-        float t = i / (steps - 1.0f);
-        gradient[i].r = static_cast<unsigned char>(color1.r * (1 - t) + color2.r * t);
-        gradient[i].g = static_cast<unsigned char>(color1.g * (1 - t) + color2.g * t);
-        gradient[i].b = static_cast<unsigned char>(color1.b * (1 - t) + color2.b * t);
-        gradient[i].a = 255;
-    }
-}
-
+class Particle; // Объявление класса Particle
 
 class Particle {
 public:
@@ -299,6 +196,114 @@ public:
         vy += impulse_y / density;
     }
 };
+
+
+class Quadtree {
+public:
+    // Границы квадродерева
+    float x, y, width, height;
+    // Максимальное количество частиц в узле
+    int capacity;
+    // Вектор частиц в данном узле
+    std::vector<Particle*> particles;
+    // Дочерние узлы
+    std::unique_ptr<Quadtree> nw, ne, sw, se;
+    bool divided;
+
+
+    Quadtree(float x, float y, float width, float height, int capacity) :
+        x(x), y(y), width(width), height(height), capacity(capacity), divided(false) {}
+
+    void insert(Particle* particle) {
+        if (!contains(particle)) return;
+
+        if (particles.size() < capacity) {
+            particles.push_back(particle);
+        }
+        else {
+            if (!divided) subdivide();
+
+            nw->insert(particle);
+            ne->insert(particle);
+            sw->insert(particle);
+            se->insert(particle);
+        }
+    }
+
+    void query(float x, float y, float radius, std::vector<Particle*>& found) {
+        if (!intersects(x, y, radius)) return;
+
+        for (Particle* p : particles) {
+            float dx = p->x - x;
+            float dy = p->y - y;
+            if (dx * dx + dy * dy < radius * radius) {
+                found.push_back(p);
+            }
+        }
+
+        if (divided) {
+            nw->query(x, y, radius, found);
+            ne->query(x, y, radius, found);
+            sw->query(x, y, radius, found);
+            se->query(x, y, radius, found);
+        }
+    }
+
+
+private:
+
+    bool contains(Particle* particle) {
+        return particle->x >= x && particle->x < x + width &&
+            particle->y >= y && particle->y < y + height;
+    }
+
+
+    bool intersects(float x, float y, float radius) {
+        float distX = std::abs(x - (this->x + this->width / 2));
+        float distY = std::abs(y - (this->y + this->height / 2));
+
+        if (distX > this->width / 2 + radius) return false;
+        if (distY > this->height / 2 + radius) return false;
+
+        if (distX <= this->width / 2) return true;
+        if (distY <= this->height / 2) return true;
+
+        float cornerDistSq = (distX - this->width / 2) * (distX - this->width / 2) +
+            (distY - this->height / 2) * (distY - this->height / 2);
+
+        return cornerDistSq <= radius * radius;
+
+    }
+
+
+    void subdivide() {
+        float halfWidth = width / 2;
+        float halfHeight = height / 2;
+
+        nw = std::make_unique<Quadtree>(x, y, halfWidth, halfHeight, capacity);
+        ne = std::make_unique<Quadtree>(x + halfWidth, y, halfWidth, halfHeight, capacity);
+        sw = std::make_unique<Quadtree>(x, y + halfHeight, halfWidth, halfHeight, capacity);
+        se = std::make_unique<Quadtree>(x + halfWidth, y + halfHeight, halfWidth, halfHeight, capacity);
+
+        divided = true;
+    }
+};
+
+
+
+
+// Функция для создания градиента цветов
+void create_gradient(Color color1, Color color2, int steps, Color* gradient) {
+    for (int i = 0; i < steps; ++i) {
+        float t = i / (steps - 1.0f);
+        gradient[i].r = static_cast<unsigned char>(color1.r * (1 - t) + color2.r * t);
+        gradient[i].g = static_cast<unsigned char>(color1.g * (1 - t) + color2.g * t);
+        gradient[i].b = static_cast<unsigned char>(color1.b * (1 - t) + color2.b * t);
+        gradient[i].a = 255;
+    }
+}
+
+
 
 
 void find_neighbors(std::vector<Particle>& particles, Quadtree& qtree) {
